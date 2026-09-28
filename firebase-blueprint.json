@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A drone pilot profile.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "isBanned": { "type": "boolean" },
+        "homeBase": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "name": { "type": "string" },
+            "country": { "type": "string" },
+            "state": { "type": "string" },
+            "city": { "type": "string" }
+          },
+          "required": ["lat", "lng", "name", "country"]
+        },
+        "certifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "country": { "type": "string" },
+              "name": { "type": "string" }
+            },
+            "required": ["country", "name"]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Available to Guide", "Looking to Fly", "Unavailable"]
+        }
+      },
+      "required": ["uid", "displayName", "status"]
+    },
+    "MeetupRequest": {
+      "title": "MeetupRequest",
+      "description": "A request to meet up and fly together.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "guidanceNeeded": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "declined"]
+        },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["senderId", "receiverId", "guidanceNeeded", "status", "createdAt"]
+    },
+    "Regulation": {
+      "title": "Regulation",
+      "description": "Drone laws and regulations for a specific region.",
+      "type": "object",
+      "properties": {
+        "country": { "type": "string" },
+        "state": { "type": "string" },
+        "city": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "droneType": { "type": "string" },
+        "summary": { "type": "string" },
+        "officialLink": { "type": "string" },
+        "noFlyWarnings": { "type": "string" },
+        "updatedAt": { "type": "timestamp" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["country", "droneType", "summary", "updatedAt"]
+    },
+    "FlightSpot": {
+      "title": "FlightSpot",
+      "description": "A safe or recommended place to fly a drone.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "radius": { "type": "number" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "country": { "type": "string" },
+        "authorId": { "type": "string" },
+        "recommendedApps": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["name", "lat", "lng", "authorId", "createdAt"]
+    },
+    "Stats": {
+      "title": "Stats",
+      "description": "Global statistics.",
+      "type": "object",
+      "properties": {
+        "totalConnections": { "type": "number" }
+      },
+      "required": ["totalConnections"]
+    },
+    "ForumPost": {
+      "title": "ForumPost",
+      "description": "A post in the community forum.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "repliesCount": { "type": "number" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["title", "content", "authorId", "authorName", "repliesCount", "createdAt"]
+    },
+    "ForumReply": {
+      "title": "ForumReply",
+      "description": "A reply to a forum post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "content": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["postId", "content", "authorId", "authorName", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A direct message within a meetup request.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "senderId": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["text", "senderId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/meetupRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/MeetupRequest" },
+      "description": "Stores meetup requests between pilots."
+    },
+    "/meetupRequests/{requestId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Stores direct messages for a meetup request."
+    },
+    "/forumPosts/{postId}": {
+      "schema": { "$ref": "#/entities/ForumPost" },
+      "description": "Stores community forum posts."
+    },
+    "/forumReplies/{replyId}": {
+      "schema": { "$ref": "#/entities/ForumReply" },
+      "description": "Stores replies to forum posts."
+    },
+    "/regulations/{regulationId}": {
+      "schema": { "$ref": "#/entities/Regulation" },
+      "description": "Stores drone laws and regulations."
+    },
+    "/flightSpots/{spotId}": {
+      "schema": { "$ref": "#/entities/FlightSpot" },
+      "description": "Stores user-submitted safe flight locations."
+    },
+    "/stats/{statId}": {
+      "schema": { "$ref": "#/entities/Stats" },
+      "description": "Stores global statistics."
+    }
+  }
+}

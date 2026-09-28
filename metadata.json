@@ -1,0 +1,7 @@
+{
+  "name": "Global Wingman",
+  "description": "A global community platform for traveling drone pilots to connect with locals, fly safely, and share guidance.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

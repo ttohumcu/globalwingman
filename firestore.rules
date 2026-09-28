@@ -1,0 +1,301 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - displayName: string (required)
+    //   - photoURL: string (optional)
+    //   - homeBase: map {lat: number, lng: number, name: string} (optional)
+    //   - certifications: list of maps {country: string, name: string} (optional)
+    //   - status: string (required, enum: 'Available to Guide', 'Looking to Fly', 'Unavailable')
+    //   - bio: string (optional)
+    //
+    // Collection: meetupRequests
+    // Document ID: {requestId}
+    // Fields:
+    //   - senderId: string (required, immutable)
+    //   - receiverId: string (required, immutable)
+    //   - travelDates: map {start: string, end: string} (required)
+    //   - guidanceNeeded: string (required)
+    //   - status: string (required, enum: 'pending', 'accepted', 'declined')
+    //   - createdAt: timestamp (required, immutable)
+    //
+    // Collection: regulations
+    // Document ID: {regulationId}
+    // Fields:
+    //   - country: string (required)
+    //   - region: string (optional)
+    //   - droneType: string (required)
+    //   - summary: string (required)
+    //   - officialLink: string (optional)
+    //   - noFlyWarnings: string (optional)
+    //   - updatedAt: timestamp (required)
+    //   - updatedBy: string (optional)
+    //
+    // Collection: flightSpots
+    // Document ID: {spotId}
+    // Fields:
+    //   - name: string (required)
+    //   - description: string (optional)
+    //   - radius: number (optional)
+    //   - lat: number (required)
+    //   - lng: number (required)
+    //   - city: string (optional)
+    //   - state: string (optional)
+    //   - country: string (optional)
+    //   - authorId: string (required, immutable)
+    //   - recommendedApps: string (optional)
+    //   - createdAt: timestamp (required, immutable)
+    //
+    // Collection: stats
+    // Document ID: {statId}
+    // Fields:
+    //   - totalConnections: number (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == "ttohumcu@gmail.com" && request.auth.token.email_verified == true;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function isValidString(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+    
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+    
+    function isValidHomeBase(data) {
+      return !('homeBase' in data) || data.homeBase == null || (
+        data.homeBase is map &&
+        data.homeBase.keys().hasAll(['lat', 'lng', 'name', 'country']) &&
+        data.homeBase.lat is number &&
+        data.homeBase.lng is number &&
+        data.homeBase.name is string && data.homeBase.name.size() <= 200 &&
+        data.homeBase.country is string && data.homeBase.country.size() <= 100 &&
+        (!('state' in data.homeBase) || (data.homeBase.state is string && data.homeBase.state.size() <= 100)) &&
+        (!('city' in data.homeBase) || (data.homeBase.city is string && data.homeBase.city.size() <= 100))
+      );
+    }
+    
+    function isValidCertifications(data) {
+      return !('certifications' in data) || data.certifications == null || (
+        data.certifications is list && data.certifications.size() <= 50
+      );
+    }
+    
+    function isValidSocials(data) {
+      return !('socials' in data) || data.socials == null || (
+        data.socials is map &&
+        (!('x' in data.socials) || (data.socials.x is string && data.socials.x.size() <= 200)) &&
+        (!('instagram' in data.socials) || (data.socials.instagram is string && data.socials.instagram.size() <= 200)) &&
+        (!('youtube' in data.socials) || (data.socials.youtube is string && data.socials.youtube.size() <= 200))
+      );
+    }
+    
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'displayName', 'status']) &&
+             data.uid is string &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 100 &&
+             isValidOptionalString('photoURL', 0, 1000) &&
+             isValidOptionalString('email', 0, 200) &&
+             (!('role' in data) || data.role in ['user', 'admin']) &&
+             (!('isBanned' in data) || data.isBanned is bool) &&
+             data.status in ['Available to Guide', 'Looking to Fly', 'Unavailable'] &&
+             isValidHomeBase(data) &&
+             isValidCertifications(data) &&
+             isValidSocials(data) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+    
+    function isValidMeetupRequest(data) {
+      return hasRequiredFields(['senderId', 'receiverId', 'guidanceNeeded', 'status', 'createdAt']) &&
+             data.senderId is string &&
+             data.receiverId is string &&
+             data.senderId != data.receiverId &&
+             data.guidanceNeeded is string && data.guidanceNeeded.size() <= 2000 &&
+             data.status in ['pending', 'accepted', 'declined'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidRegulation(data) {
+      return hasRequiredFields(['country', 'droneType', 'summary', 'updatedAt']) &&
+             isValidString('country', 1, 100) &&
+             isValidOptionalString('state', 0, 100) &&
+             isValidOptionalString('city', 0, 100) &&
+             (!('lat' in data) || data.lat is number) &&
+             (!('lng' in data) || data.lng is number) &&
+             isValidString('droneType', 1, 50) &&
+             isValidString('summary', 1, 5000) &&
+             isValidOptionalString('officialLink', 0, 500) &&
+             isValidOptionalString('noFlyWarnings', 0, 2000) &&
+             data.updatedAt is timestamp &&
+             isValidOptionalString('updatedBy', 0, 100);
+    }
+
+    function isValidFlightSpot(data) {
+      return hasRequiredFields(['name', 'lat', 'lng', 'authorId', 'createdAt']) &&
+             isValidString('name', 1, 100) &&
+             isValidOptionalString('description', 0, 2000) &&
+             (!('radius' in data) || (data.radius is number && data.radius >= 0 && data.radius <= 10000)) &&
+             data.lat is number &&
+             data.lng is number &&
+             isValidOptionalString('city', 0, 100) &&
+             isValidOptionalString('state', 0, 100) &&
+             isValidOptionalString('country', 0, 100) &&
+             data.authorId is string &&
+             isValidOptionalString('recommendedApps', 0, 1000) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidStats(data) {
+      return (!('totalConnections' in data) || data.totalConnections is number) &&
+             (!('totalForumPosts' in data) || data.totalForumPosts is number);
+    }
+
+    function isValidForumPost(data) {
+      return hasRequiredFields(['title', 'content', 'authorId', 'authorName', 'repliesCount', 'createdAt']) &&
+             isValidString('title', 1, 200) &&
+             isValidString('content', 1, 10000) &&
+             data.authorId is string &&
+             data.authorName is string &&
+             data.repliesCount is number && data.repliesCount >= 0 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidForumReply(data) {
+      return hasRequiredFields(['postId', 'content', 'authorId', 'authorName', 'createdAt']) &&
+             data.postId is string &&
+             isValidString('content', 1, 5000) &&
+             data.authorId is string &&
+             data.authorName is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidChatMessage(data) {
+      return hasRequiredFields(['text', 'senderId', 'createdAt']) &&
+             isValidString('text', 1, 2000) &&
+             data.senderId is string &&
+             data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      // Anyone can read public user profiles to see them on the map
+      allow read: if true;
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() && (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin()) && (!('isBanned' in request.resource.data) || request.resource.data.isBanned == false || isAdmin());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && uidNotModified() && (isAdmin() || ((!('role' in request.resource.data) || request.resource.data.role == resource.data.role) && (!('isBanned' in request.resource.data) || request.resource.data.isBanned == resource.data.isBanned)));
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    match /meetupRequests/{requestId} {
+      // Users can read requests they sent or received
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId || isAdmin());
+      
+      // Users can create requests where they are the sender
+      allow create: if isAuthenticated() && 
+                    request.auth.uid == request.resource.data.senderId && 
+                    isValidMeetupRequest(request.resource.data);
+                    
+      // Receiver can update status, sender can update other fields (simplified for now: only receiver can update status to accepted/declined, sender can cancel)
+      allow update: if isAuthenticated() && isValidMeetupRequest(request.resource.data) && (
+        (request.auth.uid == resource.data.receiverId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) ||
+        (request.auth.uid == resource.data.senderId && request.resource.data.status == 'declined') // Sender can cancel
+      ) && request.resource.data.senderId == resource.data.senderId 
+        && request.resource.data.receiverId == resource.data.receiverId
+        && request.resource.data.createdAt == resource.data.createdAt;
+        
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.senderId || isAdmin());
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (request.auth.uid == get(/databases/$(database)/documents/meetupRequests/$(requestId)).data.senderId || request.auth.uid == get(/databases/$(database)/documents/meetupRequests/$(requestId)).data.receiverId);
+        allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId && isValidChatMessage(request.resource.data) && (request.auth.uid == get(/databases/$(database)/documents/meetupRequests/$(requestId)).data.senderId || request.auth.uid == get(/databases/$(database)/documents/meetupRequests/$(requestId)).data.receiverId);
+      }
+    }
+    
+    match /forumPosts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.authorId && isValidForumPost(request.resource.data);
+      allow update: if isAuthenticated() && isValidForumPost(request.resource.data) && (
+        isAdmin() ||
+        (request.auth.uid == resource.data.authorId && request.resource.data.authorId == resource.data.authorId && request.resource.data.createdAt == resource.data.createdAt) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['repliesCount']) && request.resource.data.repliesCount == resource.data.repliesCount + 1)
+      );
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.authorId || isAdmin());
+    }
+
+    match /forumReplies/{replyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.authorId && isValidForumReply(request.resource.data);
+      allow update: if isAuthenticated() && isValidForumReply(request.resource.data) && (isAdmin() || (request.auth.uid == resource.data.authorId && request.resource.data.authorId == resource.data.authorId && request.resource.data.createdAt == resource.data.createdAt));
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.authorId || isAdmin());
+    }
+    
+    match /regulations/{regulationId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidRegulation(request.resource.data);
+      allow update: if isAuthenticated() && isValidRegulation(request.resource.data) && (isAdmin() || request.auth.uid == resource.data.updatedBy);
+      allow delete: if isAuthenticated() && (isAdmin() || request.auth.uid == resource.data.updatedBy);
+    }
+    
+    match /flightSpots/{spotId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.authorId && isValidFlightSpot(request.resource.data);
+      allow update: if isAuthenticated() && isValidFlightSpot(request.resource.data) && (isAdmin() || (request.auth.uid == resource.data.authorId && request.resource.data.authorId == resource.data.authorId && request.resource.data.createdAt == resource.data.createdAt));
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.authorId || isAdmin());
+    }
+
+    match /stats/{statId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidStats(request.resource.data);
+      allow update: if isAuthenticated() && isValidStats(request.resource.data) && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalConnections', 'totalForumPosts']);
+    }
+
+    match /auditLogs/{logId} {
+      // Anyone logged in can write their own audit log
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      // Only admins can read, update, or delete audit logs
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}
